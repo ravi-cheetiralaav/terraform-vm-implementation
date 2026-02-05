@@ -9,85 +9,52 @@ resource "azurerm_resource_group" "rg" {
   location = var.location
 }
 
-# Virtual Network
-resource "azurerm_virtual_network" "vnet" {
+# Virtual Network using AVM
+module "virtual_network" {
+  source  = "Azure/avm-res-network-virtualnetwork/azurerm"
+  version = "~> 0.4.0"
+
   name                = "vnet-${random_id.suffix.hex}"
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
   address_space       = ["10.0.0.0/16"]
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
+
+  subnets = {
+    vm_subnet = {
+      name             = "vm-subnet"
+      address_prefixes = ["10.0.1.0/24"]
+    }
+  }
 }
 
-# Subnet for VMs
-resource "azurerm_subnet" "vm_subnet" {
-  name                 = "vm-subnet"
-  resource_group_name  = azurerm_resource_group.rg.name
-  virtual_network_name = azurerm_virtual_network.vnet.name
-  address_prefixes     = ["10.0.1.0/24"]
-}
+# Network Security Group using AVM
+module "network_security_group" {
+  source  = "Azure/avm-res-network-networksecuritygroup/azurerm"
+  version = "~> 0.2.0"
 
-# Network Security Group - Deny outbound internet access
-resource "azurerm_network_security_group" "nsg" {
   name                = "nsg-vm-${random_id.suffix.hex}"
-  location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
 
-  # Deny all outbound internet traffic
-  security_rule {
-    name                       = "DenyInternetOutbound"
-    priority                   = 100
-    direction                  = "Outbound"
-    access                     = "Deny"
-    protocol                   = "*"
-    source_port_range          = "*"
-    destination_port_range     = "*"
-    source_address_prefix      = "*"
-    destination_address_prefix = "Internet"
+  security_rules = {
+    deny_internet_outbound = {
+      name                       = "DenyInternetOutbound"
+      priority                   = 100
+      direction                  = "Outbound"
+      access                     = "Deny"
+      protocol                   = "*"
+      source_port_range          = "*"
+      destination_port_range     = "*"
+      source_address_prefix      = "*"
+      destination_address_prefix = "Internet"
+    }
   }
 }
 
 # Associate NSG with subnet
 resource "azurerm_subnet_network_security_group_association" "nsg_assoc" {
-  subnet_id                 = azurerm_subnet.vm_subnet.id
-  network_security_group_id = azurerm_network_security_group.nsg.id
-}
-
-# Storage Account for software files
-resource "azurerm_storage_account" "storage" {
-  name                     = "sa${random_id.suffix.hex}"
-  resource_group_name      = azurerm_resource_group.rg.name
-  location                 = azurerm_resource_group.rg.location
-  account_tier             = "Standard"
-  account_replication_type = "LRS"
-
-  # Disable public access
-  public_network_access_enabled   = false
-  allow_nested_items_to_be_public = false
-}
-
-# Storage Container
-resource "azurerm_storage_container" "software" {
-  name                  = "software"
-  storage_account_name  = azurerm_storage_account.storage.name
-  container_access_type = "private"
-}
-
-# Upload software ZIP file
-# Note: Ensure the software ZIP file exists at software/npp.8.9.1.Installer.x64.zip
-resource "azurerm_storage_blob" "software_zip" {
-  name                   = "npp.8.9.1.Installer.x64.zip"
-  storage_account_name   = azurerm_storage_account.storage.name
-  storage_container_name = azurerm_storage_container.software.name
-  type                   = "Block"
-  source                 = "${path.module}/software/npp.8.9.1.Installer.x64.zip"
-}
-
-# Upload installation script
-resource "azurerm_storage_blob" "install_script" {
-  name                   = "install-software.ps1"
-  storage_account_name   = azurerm_storage_account.storage.name
-  storage_container_name = azurerm_storage_container.software.name
-  type                   = "Block"
-  source                 = "${path.module}/scripts/install-software.ps1"
+  subnet_id                 = module.virtual_network.subnets["vm_subnet"].resource_id
+  network_security_group_id = module.network_security_group.resource_id
 }
 
 # Private DNS Zone for Storage Blob
@@ -101,103 +68,141 @@ resource "azurerm_private_dns_zone_virtual_network_link" "storage_link" {
   name                  = "storage-dns-link"
   resource_group_name   = azurerm_resource_group.rg.name
   private_dns_zone_name = azurerm_private_dns_zone.storage_blob.name
-  virtual_network_id    = azurerm_virtual_network.vnet.id
+  virtual_network_id    = module.virtual_network.resource_id
 }
 
-# Private Endpoint for Storage Account
-resource "azurerm_private_endpoint" "storage_pe" {
-  name                = "pe-storage-${random_id.suffix.hex}"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
-  subnet_id           = azurerm_subnet.vm_subnet.id
+# Storage Account using AVM
+module "storage_account" {
+  source  = "Azure/avm-res-storage-storageaccount/azurerm"
+  version = "~> 0.2.0"
 
-  private_service_connection {
-    name                           = "storage-privateserviceconnection"
-    private_connection_resource_id = azurerm_storage_account.storage.id
-    is_manual_connection           = false
-    subresource_names              = ["blob"]
+  name                          = "sa${random_id.suffix.hex}"
+  resource_group_name           = azurerm_resource_group.rg.name
+  location                      = azurerm_resource_group.rg.location
+  account_tier                  = "Standard"
+  account_replication_type      = "LRS"
+  public_network_access_enabled = false
+
+  containers = {
+    software = {
+      name                  = "software"
+      container_access_type = "private"
+    }
   }
 
-  private_dns_zone_group {
-    name                 = "storage-dns-zone-group"
-    private_dns_zone_ids = [azurerm_private_dns_zone.storage_blob.id]
+  private_endpoints = {
+    primary = {
+      name                          = "pe-storage-${random_id.suffix.hex}"
+      subnet_resource_id            = module.virtual_network.subnets["vm_subnet"].resource_id
+      subresource_name              = "blob"
+      private_dns_zone_group_name   = "storage-dns-zone-group"
+      private_dns_zone_resource_ids = [azurerm_private_dns_zone.storage_blob.id]
+    }
   }
+
+  depends_on = [
+    azurerm_private_dns_zone_virtual_network_link.storage_link
+  ]
 }
 
-# Network Interface for VM
-resource "azurerm_network_interface" "nic" {
-  name                = "nic-vm-${random_id.suffix.hex}"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
+# Upload software ZIP file
+# Note: Ensure the software ZIP file exists at software/npp.8.9.1.Installer.x64.zip
+resource "azurerm_storage_blob" "software_zip" {
+  name                   = "npp.8.9.1.Installer.x64.zip"
+  storage_account_name   = module.storage_account.name
+  storage_container_name = "software"
+  type                   = "Block"
+  source                 = "${path.module}/software/npp.8.9.1.Installer.x64.zip"
 
-  ip_configuration {
-    name                          = "internal"
-    subnet_id                     = azurerm_subnet.vm_subnet.id
-    private_ip_address_allocation = "Dynamic"
-  }
+  depends_on = [module.storage_account]
 }
 
-# Windows Virtual Machine
-resource "azurerm_windows_virtual_machine" "vm" {
+# Upload installation script
+resource "azurerm_storage_blob" "install_script" {
+  name                   = "install-software.ps1"
+  storage_account_name   = module.storage_account.name
+  storage_container_name = "software"
+  type                   = "Block"
+  source                 = "${path.module}/scripts/install-software.ps1"
+
+  depends_on = [module.storage_account]
+}
+
+# Virtual Machine using AVM
+module "virtual_machine" {
+  source  = "Azure/avm-res-compute-virtualmachine/azurerm"
+  version = "~> 0.15.0"
+
   name                = "vm-win-${random_id.suffix.hex}"
   resource_group_name = azurerm_resource_group.rg.name
   location            = azurerm_resource_group.rg.location
-  size                = "Standard_D2s_v3"
-  admin_username      = var.admin_username
-  admin_password      = var.admin_password
 
-  network_interface_ids = [
-    azurerm_network_interface.nic.id,
-  ]
+  os_type  = "Windows"
+  sku_size = "Standard_D2s_v3"
+  zone     = null # Set to null for regions without availability zones
 
-  os_disk {
-    caching              = "ReadWrite"
-    storage_account_type = "Premium_LRS"
-  }
+  admin_username = var.admin_username
+  admin_password = var.admin_password
 
-  source_image_reference {
+  source_image_reference = {
     publisher = "MicrosoftWindowsServer"
     offer     = "WindowsServer"
     sku       = "2022-datacenter-azure-edition"
     version   = "latest"
   }
 
-  # Enable managed identity for storage access
-  identity {
-    type = "SystemAssigned"
+  os_disk = {
+    caching              = "ReadWrite"
+    storage_account_type = "Premium_LRS"
   }
-}
 
-# Role assignment for VM to access storage
-resource "azurerm_role_assignment" "vm_storage_access" {
-  scope                = azurerm_storage_account.storage.id
-  role_definition_name = "Storage Blob Data Reader"
-  principal_id         = azurerm_windows_virtual_machine.vm.identity[0].principal_id
-}
+  network_interfaces = {
+    network_interface_0 = {
+      name = "nic-vm-${random_id.suffix.hex}"
+      ip_configurations = {
+        ip_configuration_0 = {
+          name                          = "internal"
+          private_ip_address_allocation = "Dynamic"
+          private_ip_subnet_resource_id = module.virtual_network.subnets["vm_subnet"].resource_id
+        }
+      }
+    }
+  }
 
-# Custom Script Extension to install software
-resource "azurerm_virtual_machine_extension" "install_software" {
-  name                       = "install-software"
-  virtual_machine_id         = azurerm_windows_virtual_machine.vm.id
-  publisher                  = "Microsoft.Compute"
-  type                       = "CustomScriptExtension"
-  type_handler_version       = "1.10"
-  auto_upgrade_minor_version = true
+  managed_identities = {
+    system_assigned = true
+  }
 
-  protected_settings = jsonencode({
-    storageAccountName = azurerm_storage_account.storage.name
-    storageAccountKey  = azurerm_storage_account.storage.primary_access_key
-    fileUris = [
-      "https://${azurerm_storage_account.storage.name}.blob.core.windows.net/${azurerm_storage_container.software.name}/install-software.ps1",
-      "https://${azurerm_storage_account.storage.name}.blob.core.windows.net/${azurerm_storage_container.software.name}/npp.8.9.1.Installer.x64.zip"
-    ]
-    commandToExecute = "powershell -ExecutionPolicy Unrestricted -File install-software.ps1"
-  })
+  extensions = {
+    install_software = {
+      name                       = "install-software"
+      publisher                  = "Microsoft.Compute"
+      type                       = "CustomScriptExtension"
+      type_handler_version       = "1.10"
+      auto_upgrade_minor_version = true
+
+      protected_settings = jsonencode({
+        storageAccountName = module.storage_account.name
+        storageAccountKey  = module.storage_account.resource.primary_access_key
+        fileUris = [
+          "https://${module.storage_account.name}.blob.core.windows.net/software/install-software.ps1",
+          "https://${module.storage_account.name}.blob.core.windows.net/software/npp.8.9.1.Installer.x64.zip"
+        ]
+        commandToExecute = "powershell -ExecutionPolicy Unrestricted -File install-software.ps1"
+      })
+    }
+  }
 
   depends_on = [
     azurerm_storage_blob.software_zip,
     azurerm_storage_blob.install_script,
-    azurerm_private_endpoint.storage_pe,
-    azurerm_role_assignment.vm_storage_access
+    module.storage_account
   ]
+}
+
+# Role assignment for VM to access storage
+resource "azurerm_role_assignment" "vm_storage_access" {
+  scope                = module.storage_account.resource_id
+  role_definition_name = "Storage Blob Data Reader"
+  principal_id         = module.virtual_machine.system_assigned_mi_principal_id
 }

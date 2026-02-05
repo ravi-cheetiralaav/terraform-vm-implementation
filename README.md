@@ -1,14 +1,16 @@
-# Azure Windows Server 2022 VM with Private Storage - Terraform Implementation
+# Azure Windows Server 2022 VM with Private Storage - Terraform Implementation using Azure Verified Modules (AVM)
 
-This Terraform configuration deploys a Windows Server 2022 VM in Azure with a private Storage Account and automated software installation. The VM has no public internet access and uses a Private Endpoint to securely access the Storage Account.
+This Terraform configuration deploys a Windows Server 2022 VM in Azure with a private Storage Account and automated software installation using **Azure Verified Modules (AVM)**. The VM has no public internet access and uses a Private Endpoint to securely access the Storage Account.
 
 ## Overview
 
 This implementation provides a minimal, production-ready Terraform configuration that:
-- Deploys a Windows Server 2022 VM (2022-datacenter-azure-edition)
-- Provisions a Storage Account with Private Endpoint (no internet exposure)
+- Deploys a Windows Server 2022 VM (2022-datacenter-azure-edition) using **AVM**
+- Provisions a Storage Account with Private Endpoint (no internet exposure) using **AVM**
+- Provisions Virtual Network and Network Security Group using **AVM**
 - Automatically installs software from a local ZIP file during VM provisioning
 - Uses only mandatory variables with sensible defaults
+- Leverages official Azure Verified Modules for best practices and security
 
 ## Architecture
 
@@ -42,18 +44,28 @@ This implementation provides a minimal, production-ready Terraform configuration
 
 ## Features
 
+- **Azure Verified Modules (AVM)**: Uses official Microsoft-verified Terraform modules
 - **Windows Server 2022 VM**: Uses the latest `2022-datacenter-azure-edition` SKU
 - **Air-Gapped Network**: VM has no public internet access via NSG rules
 - **Private Storage Access**: Storage Account uses Private Endpoint for secure access
 - **Automated Software Installation**: PowerShell script extracts ZIP and installs software on first boot
 - **Minimal Configuration**: Uses only mandatory variables with sensible defaults
+- **Production-Ready**: Follows Azure best practices through AVM modules
 - **Infrastructure as Code**: Clean, commented Terraform for easy maintenance
 
 ## Prerequisites
 
 - Azure Subscription with appropriate permissions
-- Terraform >= 1.6
+- Terraform >= 1.9 (required by AVM modules)
 - Azure CLI (optional, for authentication)
+
+## Azure Verified Modules Used
+
+This implementation uses the following official Azure Verified Modules:
+- **Virtual Network**: `Azure/avm-res-network-virtualnetwork/azurerm` (~> 0.4.0)
+- **Network Security Group**: `Azure/avm-res-network-networksecuritygroup/azurerm` (~> 0.2.0)
+- **Storage Account**: `Azure/avm-res-storage-storageaccount/azurerm` (~> 0.2.0)
+- **Virtual Machine**: `Azure/avm-res-compute-virtualmachine/azurerm` (~> 0.15.0)
 
 ## Project Structure
 

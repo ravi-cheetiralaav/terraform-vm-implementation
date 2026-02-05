@@ -1,19 +1,24 @@
 output "vm_id" {
   description = "Resource ID of the virtual machine"
-  value       = azurerm_windows_virtual_machine.vm.id
+  value       = module.virtual_machine.resource_id
 }
 
 output "vm_private_ip" {
   description = "Private IP address of the VM"
-  value       = azurerm_network_interface.nic.private_ip_address
+  value       = [for nic_key, nic in module.virtual_machine.network_interfaces : nic.private_ip_addresses]
 }
 
 output "storage_account_name" {
   description = "Name of the storage account"
-  value       = azurerm_storage_account.storage.name
+  value       = module.storage_account.name
 }
 
 output "resource_group_name" {
   description = "Name of the resource group"
   value       = azurerm_resource_group.rg.name
+}
+
+output "vnet_id" {
+  description = "Resource ID of the virtual network"
+  value       = module.virtual_network.resource_id
 }
