@@ -72,6 +72,7 @@ resource "azurerm_storage_container" "software" {
 }
 
 # Upload software ZIP file
+# Note: Ensure the software ZIP file exists at software/npp.8.9.1.Installer.x64.zip
 resource "azurerm_storage_blob" "software_zip" {
   name                   = "npp.8.9.1.Installer.x64.zip"
   storage_account_name   = azurerm_storage_account.storage.name

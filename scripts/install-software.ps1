@@ -6,10 +6,10 @@ $ErrorActionPreference = "Continue"
 
 # Create log file
 $logFile = "C:\Windows\Temp\software-install.log"
-$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
 function Write-Log {
     param([string]$Message)
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logMessage = "[$timestamp] $Message"
     Write-Output $logMessage
     Add-Content -Path $logFile -Value $logMessage
