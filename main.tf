@@ -58,7 +58,7 @@ resource "azurerm_storage_account" "storage" {
   location                 = azurerm_resource_group.rg.location
   account_tier             = "Standard"
   account_replication_type = "LRS"
-  
+
   # Disable public access
   public_network_access_enabled   = false
   allow_nested_items_to_be_public = false
