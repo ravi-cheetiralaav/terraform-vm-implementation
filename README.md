@@ -98,7 +98,7 @@ This implementation uses the following official Azure Verified Modules:
    Edit `terraform.tfvars` with your values:
    ```hcl
    resource_group_name = "rg-windows-vm-demo"
-   location            = "East US"
+   location            = "Australia East"  # Default region
    admin_username      = "azureadmin"
    admin_password      = "YourSecurePassword123!"
    ```
@@ -117,6 +117,8 @@ This implementation uses the following official Azure Verified Modules:
    ```bash
    terraform apply
    ```
+
+> 📖 **For detailed deployment steps and test results**, see [TESTING_AND_DEPLOYMENT.md](TESTING_AND_DEPLOYMENT.md)
 
 ## What Gets Deployed
 
