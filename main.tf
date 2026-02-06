@@ -37,9 +37,20 @@ module "network_security_group" {
   location            = azurerm_resource_group.rg.location
 
   security_rules = {
+    allow_rdp_inbound = {
+      name                       = "AllowRdpInbound"
+      priority                   = 100
+      direction                  = "Inbound"
+      access                     = "Allow"
+      protocol                   = "Tcp"
+      source_port_range          = "*"
+      destination_port_range     = "3389"
+      source_address_prefix      = "*"  # Allow from any IP - consider restricting to your IP for better security
+      destination_address_prefix = "*"
+    }
     deny_internet_outbound = {
       name                       = "DenyInternetOutbound"
-      priority                   = 100
+      priority                   = 200
       direction                  = "Outbound"
       access                     = "Deny"
       protocol                   = "*"
@@ -81,7 +92,13 @@ module "storage_account" {
   location                      = azurerm_resource_group.rg.location
   account_tier                  = "Standard"
   account_replication_type      = "LRS"
-  public_network_access_enabled = false
+  public_network_access_enabled = true # Temporarily enable for blob uploads
+  shared_access_key_enabled     = true
+
+  # Disable network restrictions temporarily for blob uploads
+  network_rules = {
+    default_action = "Allow"
+  }
 
   containers = {
     software = {
@@ -128,6 +145,15 @@ resource "azurerm_storage_blob" "install_script" {
   depends_on = [module.storage_account]
 }
 
+# Public IP for the VM
+resource "azurerm_public_ip" "vm_public_ip" {
+  name                = "pip-vm-${random_id.suffix.hex}"
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
+  allocation_method   = "Static"
+  sku                 = "Standard"
+}
+
 # Virtual Machine using AVM
 module "virtual_machine" {
   source  = "Azure/avm-res-compute-virtualmachine/azurerm"
@@ -164,6 +190,7 @@ module "virtual_machine" {
           name                          = "internal"
           private_ip_address_allocation = "Dynamic"
           private_ip_subnet_resource_id = module.virtual_network.subnets["vm_subnet"].resource_id
+          public_ip_address_resource_id = azurerm_public_ip.vm_public_ip.id
         }
       }
     }
@@ -196,6 +223,7 @@ module "virtual_machine" {
   depends_on = [
     azurerm_storage_blob.software_zip,
     azurerm_storage_blob.install_script,
+    azurerm_private_dns_zone_virtual_network_link.storage_link,
     module.storage_account
   ]
 }

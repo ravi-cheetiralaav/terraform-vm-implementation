@@ -17,6 +17,10 @@ function Write-Log {
 
 Write-Log "=== Software Installation Started ==="
 
+# Get current working directory (where Azure extension downloads files)
+$currentDir = Get-Location
+Write-Log "Current working directory: $currentDir"
+
 # Create installation directory
 $installDir = "C:\Temp\software"
 if (!(Test-Path $installDir)) {
@@ -24,18 +28,28 @@ if (!(Test-Path $installDir)) {
     Write-Log "Created installation directory: $installDir"
 }
 
-# Set location to installation directory
-Set-Location $installDir
-Write-Log "Changed directory to: $installDir"
-
-# Define software ZIP file
+# Define software ZIP file (look in current directory first)
 $zipFile = "npp.8.9.1.Installer.x64.zip"
+$zipFilePath = $null
+
+# Check current directory first (where extension downloads files)
+if (Test-Path ".\$zipFile") {
+    $zipFilePath = ".\$zipFile"
+    Write-Log "Found ZIP file in current directory: $zipFilePath"
+} elseif (Test-Path "$installDir\$zipFile") {
+    $zipFilePath = "$installDir\$zipFile"
+    Write-Log "Found ZIP file in install directory: $zipFilePath"
+} else {
+    Write-Log "ERROR: ZIP file not found in current directory or install directory"
+    Write-Log "Current directory contents:"
+    Get-ChildItem . | ForEach-Object { Write-Log "  $($_.Name)" }
+}
 $extractDir = "$installDir\extracted"
 
 try {
     # Check if ZIP file exists
-    if (Test-Path ".\$zipFile") {
-        Write-Log "Found ZIP file: $zipFile"
+    if ($zipFilePath) {
+        Write-Log "Processing ZIP file: $zipFilePath"
         
         # Create extraction directory
         if (!(Test-Path $extractDir)) {
@@ -45,7 +59,7 @@ try {
         
         # Extract ZIP file
         Write-Log "Extracting ZIP file..."
-        Expand-Archive -Path ".\$zipFile" -DestinationPath $extractDir -Force
+        Expand-Archive -Path $zipFilePath -DestinationPath $extractDir -Force
         Write-Log "Successfully extracted ZIP file"
         
         # Find the installer executable
