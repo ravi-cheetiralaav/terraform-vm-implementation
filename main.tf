@@ -9,6 +9,45 @@ resource "azurerm_resource_group" "rg" {
   location = var.location
 }
 
+# Get current client configuration
+data "azurerm_client_config" "current" {}
+
+# Key Vault
+resource "azurerm_key_vault" "kv" {
+  name                = "kv-azure-testing"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  tenant_id           = data.azurerm_client_config.current.tenant_id
+  sku_name            = "standard"
+  purge_protection_enabled = true
+
+  access_policy {
+    tenant_id = data.azurerm_client_config.current.tenant_id
+    object_id = data.azurerm_client_config.current.object_id
+
+    secret_permissions = [
+      "Get",
+      "List",
+      "Set",
+      "Delete",
+      "Recover",
+      "Backup",
+      "Restore"
+    ]
+  }
+
+  # Allow VM managed identity to read secrets
+  access_policy {
+    tenant_id = data.azurerm_client_config.current.tenant_id
+    object_id = module.virtual_machine.system_assigned_mi_principal_id
+
+    secret_permissions = [
+      "Get",
+      "List"
+    ]
+  }
+}
+
 # Virtual Network using AVM
 module "virtual_network" {
   source  = "Azure/avm-res-network-virtualnetwork/azurerm"
@@ -235,4 +274,13 @@ resource "azurerm_role_assignment" "vm_storage_access" {
   scope                = module.storage_account.resource_id
   role_definition_name = "Storage Blob Data Reader"
   principal_id         = module.virtual_machine.system_assigned_mi_principal_id
+}
+
+# Store VM admin password in Key Vault
+resource "azurerm_key_vault_secret" "vm_admin_password" {
+  name         = "vm-admin-password-${module.virtual_machine.name}"
+  value        = module.virtual_machine.admin_password
+  key_vault_id = azurerm_key_vault.kv.id
+
+  depends_on = [azurerm_key_vault.kv]
 }
