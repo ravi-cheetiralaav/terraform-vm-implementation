@@ -208,14 +208,16 @@ module "virtual_machine" {
       type_handler_version       = "1.10"
       auto_upgrade_minor_version = true
 
-      protected_settings = jsonencode({
-        storageAccountName = module.storage_account.name
-        storageAccountKey  = module.storage_account.resource.primary_access_key
+      settings = jsonencode({
         fileUris = [
           "https://${module.storage_account.name}.blob.core.windows.net/software/install-software.ps1",
           "https://${module.storage_account.name}.blob.core.windows.net/software/npp.8.9.1.Installer.x64.zip"
         ]
+      })
+
+      protected_settings = jsonencode({
         commandToExecute = "powershell -ExecutionPolicy Unrestricted -File install-software.ps1"
+        managedIdentity = {}
       })
     }
   }
