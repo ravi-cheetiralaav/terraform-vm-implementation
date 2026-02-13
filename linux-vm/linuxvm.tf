@@ -1,3 +1,18 @@
+# Random ID for unique resource names
+resource "random_id" "suffix" {
+  byte_length = 4
+}
+
+# Get current client configuration
+data "azurerm_client_config" "current" {}
+
+# Resource Group
+resource "azurerm_resource_group" "rg" {
+  name     = var.resource_group_name
+  location = var.location
+}
+
+
 # Generate SSH key pair for Linux VM
 resource "tls_private_key" "linux_ssh_key" {
   algorithm = "RSA"
@@ -24,16 +39,100 @@ resource "azurerm_key_vault_secret" "linux_ssh_public_key" {
   depends_on = [azurerm_key_vault.kv]
 }
 
-# Create managed disk from VHD
+# Key Vault for storing secrets
+resource "azurerm_key_vault" "kv" {
+  name                = "kv-linux-${random_id.suffix.hex}"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  tenant_id           = data.azurerm_client_config.current.tenant_id
+  sku_name            = "standard"
+  purge_protection_enabled = false
+
+  access_policy {
+    tenant_id = data.azurerm_client_config.current.tenant_id
+    object_id = data.azurerm_client_config.current.object_id
+
+    secret_permissions = [
+      "Get",
+      "List",
+      "Set",
+      "Delete",
+      "Recover",
+      "Backup",
+      "Restore",
+    ]
+  }
+
+  tags = {
+    Environment = "Testing"
+    Purpose     = "Linux VM Secrets"
+  }
+}
+
+# Virtual Network
+resource "azurerm_virtual_network" "vnet" {
+  name                = "vnet-linux-${random_id.suffix.hex}"
+  address_space       = ["10.0.0.0/16"]
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+
+  tags = {
+    Environment = "Testing"
+    Purpose     = "Linux VM Network"
+  }
+}
+
+# Subnet for VMs
+resource "azurerm_subnet" "vm_subnet" {
+  name                 = "vm-subnet"
+  resource_group_name  = azurerm_resource_group.rg.name
+  virtual_network_name = azurerm_virtual_network.vnet.name
+  address_prefixes     = ["10.0.1.0/24"]
+}
+
+# Network Security Group
+resource "azurerm_network_security_group" "nsg" {
+  name                = "nsg-linux-${random_id.suffix.hex}"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+
+  # Allow SSH
+  security_rule {
+    name                       = "AllowSSH"
+    priority                   = 1001
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "22"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  tags = {
+    Environment = "Testing"
+    Purpose     = "Linux VM Security"
+  }
+}
+
+# Associate NSG with subnet
+resource "azurerm_subnet_network_security_group_association" "nsg_assoc" {
+  subnet_id                 = azurerm_subnet.vm_subnet.id
+  network_security_group_id = azurerm_network_security_group.nsg.id
+}
+
+# Create managed disk directly from external VHD using Import
 resource "azurerm_managed_disk" "linux_os_disk" {
-  name                   = "disk-linux-os-${random_id.suffix.hex}"
-  location               = azurerm_resource_group.rg.location
-  resource_group_name    = azurerm_resource_group.rg.name
-  storage_account_type   = var.linux_disk_storage_type
-  create_option          = "Import"
-  disk_size_gb           = var.linux_disk_size_gb
-  source_uri             = var.vhd_source_uri
-  os_type                = "Linux"
+  name                 = "disk-linux-os-${random_id.suffix.hex}"
+  location             = azurerm_resource_group.rg.location
+  resource_group_name  = azurerm_resource_group.rg.name
+  storage_account_type = var.linux_disk_storage_type
+  create_option        = "Import"
+  source_uri           = var.vhd_source_uri
+  disk_size_gb         = var.linux_disk_size_gb
+  os_type              = "Linux"
+  storage_account_id   = var.vhd_storage_account_id
+  hyper_v_generation   = "V2"
 
   tags = {
     Environment = "Testing"
@@ -63,7 +162,7 @@ resource "azurerm_network_interface" "linux_vm_nic" {
 
   ip_configuration {
     name                          = "internal"
-    subnet_id                     = module.virtual_network.subnets["vm_subnet"].resource_id
+    subnet_id                     = azurerm_subnet.vm_subnet.id
     private_ip_address_allocation = "Dynamic"
     public_ip_address_id          = azurerm_public_ip.linux_vm_public_ip.id
   }
@@ -77,7 +176,7 @@ resource "azurerm_network_interface" "linux_vm_nic" {
 # Associate NSG with Linux VM NIC
 resource "azurerm_network_interface_security_group_association" "linux_vm_nsg_assoc" {
   network_interface_id      = azurerm_network_interface.linux_vm_nic.id
-  network_security_group_id = module.network_security_group.resource_id
+  network_security_group_id = azurerm_network_security_group.nsg.id
 }
 
 # Linux Virtual Machine using existing managed disk as OS disk
@@ -104,22 +203,8 @@ resource "azurerm_virtual_machine" "linux_vm" {
     os_type           = "Linux"
   }
 
-  # OS Profile for Linux
-  os_profile {
-    computer_name  = "vm-linux-${random_id.suffix.hex}"
-    admin_username = var.linux_admin_username
-    admin_password = "DisabledPassword123!" # Required but disabled
-  }
-
-  # SSH key configuration
-  os_profile_linux_config {
-    disable_password_authentication = true
-    
-    ssh_keys {
-      path     = "/home/${var.linux_admin_username}/.ssh/authorized_keys"
-      key_data = tls_private_key.linux_ssh_key.public_key_openssh
-    }
-  }
+  # Note: No os_profile or os_profile_linux_config when using create_option = "Attach"
+  # The OS configuration is already on the attached disk
 
   # Enable system assigned managed identity
   identity {
