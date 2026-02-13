@@ -87,6 +87,17 @@ module "network_security_group" {
       source_address_prefix      = "*"  # Allow from any IP - consider restricting to your IP for better security
       destination_address_prefix = "*"
     }
+    allow_ssh_inbound = {
+      name                       = "AllowSshInbound"
+      priority                   = 110
+      direction                  = "Inbound"
+      access                     = "Allow"
+      protocol                   = "Tcp"
+      source_port_range          = "*"
+      destination_port_range     = "22"
+      source_address_prefix      = "*"  # Allow from any IP - consider restricting to your IP for better security
+      destination_address_prefix = "*"
+    }
     deny_internet_outbound = {
       name                       = "DenyInternetOutbound"
       priority                   = 200
