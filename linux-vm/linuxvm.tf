@@ -46,7 +46,7 @@ resource "azurerm_key_vault" "kv" {
   resource_group_name = azurerm_resource_group.rg.name
   tenant_id           = data.azurerm_client_config.current.tenant_id
   sku_name            = "standard"
-  purge_protection_enabled = false
+  purge_protection_enabled = true
 
   access_policy {
     tenant_id = data.azurerm_client_config.current.tenant_id
@@ -60,6 +60,19 @@ resource "azurerm_key_vault" "kv" {
       "Recover",
       "Backup",
       "Restore",
+    ]
+
+    key_permissions = [
+      "Get",
+      "List",
+      "Create",
+      "Delete",
+      "Update",
+      "Recover",
+      "Backup",
+      "Restore",
+      "GetRotationPolicy",
+      "SetRotationPolicy"
     ]
   }
 
@@ -140,18 +153,78 @@ resource "azurerm_managed_disk" "linux_os_disk" {
   }
 }
 
-# Create additional 100GB data disk
-resource "azurerm_managed_disk" "linux_data_disk_01" {
-  name                 = "disk-linux-data-01-${random_id.suffix.hex}"
-  location             = azurerm_resource_group.rg.location
-  resource_group_name  = azurerm_resource_group.rg.name
-  storage_account_type = var.linux_disk_storage_type
-  create_option        = "Empty"
-  disk_size_gb         = 100
+# Key Vault Key for Disk Encryption
+resource "azurerm_key_vault_key" "disk_encryption_key" {
+  name         = "disk-encryption-key-${random_id.suffix.hex}"
+  key_vault_id = azurerm_key_vault.kv.id
+  key_type     = "RSA"
+  key_size     = 2048
+
+  key_opts = [
+    "decrypt",
+    "encrypt",
+    "sign",
+    "unwrapKey",
+    "verify",
+    "wrapKey",
+  ]
+
+  depends_on = [azurerm_key_vault.kv]
 
   tags = {
     Environment = "Testing"
-    Purpose     = "Linux VM Data Disk 01"
+    Purpose     = "Disk Encryption Key"
+  }
+}
+
+# Disk Encryption Set
+resource "azurerm_disk_encryption_set" "disk_encryption_set" {
+  name                = "des-linux-${random_id.suffix.hex}"
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
+  key_vault_key_id    = azurerm_key_vault_key.disk_encryption_key.id
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  tags = {
+    Environment = "Testing"
+    Purpose     = "Disk Encryption Set"
+  }
+}
+
+# Grant the Disk Encryption Set access to the Key Vault
+resource "azurerm_key_vault_access_policy" "disk_encryption_set_policy" {
+  key_vault_id = azurerm_key_vault.kv.id
+  tenant_id    = azurerm_disk_encryption_set.disk_encryption_set.identity.0.tenant_id
+  object_id    = azurerm_disk_encryption_set.disk_encryption_set.identity.0.principal_id
+
+  key_permissions = [
+    "Get",
+    "WrapKey",
+    "UnwrapKey"
+  ]
+}
+
+# Create additional 100GB data disk with encryption
+resource "azurerm_managed_disk" "linux_data_disk_01" {
+  name                   = "disk-linux-data-01-${random_id.suffix.hex}"
+  location               = azurerm_resource_group.rg.location
+  resource_group_name    = azurerm_resource_group.rg.name
+  storage_account_type   = var.linux_disk_storage_type
+  create_option          = "Empty"
+  disk_size_gb           = 100
+  disk_encryption_set_id = azurerm_disk_encryption_set.disk_encryption_set.id
+
+  depends_on = [
+    azurerm_disk_encryption_set.disk_encryption_set,
+    azurerm_key_vault_access_policy.disk_encryption_set_policy
+  ]
+
+  tags = {
+    Environment = "Testing"
+    Purpose     = "Linux VM Data Disk 01 - Encrypted"
   }
 }
 
