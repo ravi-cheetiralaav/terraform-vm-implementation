@@ -71,8 +71,9 @@ resource "azurerm_key_vault" "kv" {
       "Recover",
       "Backup",
       "Restore",
-      "GetRotationPolicy",
-      "SetRotationPolicy"
+      "WrapKey",
+      "UnwrapKey",
+      "GetRotationPolicy"
     ]
   }
 
@@ -153,9 +154,9 @@ resource "azurerm_managed_disk" "linux_os_disk" {
   }
 }
 
-# Key Vault Key for Disk Encryption
-resource "azurerm_key_vault_key" "disk_encryption_key" {
-  name         = "disk-encryption-key-${random_id.suffix.hex}"
+# Key Vault Key for Azure Disk Encryption (ADE)
+resource "azurerm_key_vault_key" "ade_key" {
+  name         = "ade-encryption-key-${random_id.suffix.hex}"
   key_vault_id = azurerm_key_vault.kv.id
   key_type     = "RSA"
   key_size     = 2048
@@ -173,58 +174,23 @@ resource "azurerm_key_vault_key" "disk_encryption_key" {
 
   tags = {
     Environment = "Testing"
-    Purpose     = "Disk Encryption Key"
+    Purpose     = "Azure Disk Encryption Key"
   }
 }
 
-# Disk Encryption Set
-resource "azurerm_disk_encryption_set" "disk_encryption_set" {
-  name                = "des-linux-${random_id.suffix.hex}"
-  resource_group_name = azurerm_resource_group.rg.name
-  location            = azurerm_resource_group.rg.location
-  key_vault_key_id    = azurerm_key_vault_key.disk_encryption_key.id
-
-  identity {
-    type = "SystemAssigned"
-  }
-
-  tags = {
-    Environment = "Testing"
-    Purpose     = "Disk Encryption Set"
-  }
-}
-
-# Grant the Disk Encryption Set access to the Key Vault
-resource "azurerm_key_vault_access_policy" "disk_encryption_set_policy" {
-  key_vault_id = azurerm_key_vault.kv.id
-  tenant_id    = azurerm_disk_encryption_set.disk_encryption_set.identity.0.tenant_id
-  object_id    = azurerm_disk_encryption_set.disk_encryption_set.identity.0.principal_id
-
-  key_permissions = [
-    "Get",
-    "WrapKey",
-    "UnwrapKey"
-  ]
-}
-
-# Create additional 100GB data disk with encryption
+# Create additional 100GB data disk with Platform-Managed Keys (default SSE)
 resource "azurerm_managed_disk" "linux_data_disk_01" {
-  name                   = "disk-linux-data-01-${random_id.suffix.hex}"
-  location               = azurerm_resource_group.rg.location
-  resource_group_name    = azurerm_resource_group.rg.name
-  storage_account_type   = var.linux_disk_storage_type
-  create_option          = "Empty"
-  disk_size_gb           = 100
-  disk_encryption_set_id = azurerm_disk_encryption_set.disk_encryption_set.id
-
-  depends_on = [
-    azurerm_disk_encryption_set.disk_encryption_set,
-    azurerm_key_vault_access_policy.disk_encryption_set_policy
-  ]
+  name                 = "disk-linux-data-01-${random_id.suffix.hex}"
+  location             = azurerm_resource_group.rg.location
+  resource_group_name  = azurerm_resource_group.rg.name
+  storage_account_type = var.linux_disk_storage_type
+  create_option        = "Empty"
+  disk_size_gb         = 100
+  # No disk_encryption_set_id = uses Platform-Managed Keys (SSE PMK)
 
   tags = {
     Environment = "Testing"
-    Purpose     = "Linux VM Data Disk 01 - Encrypted"
+    Purpose     = "Linux VM Data Disk 01 - SSE PMK"
   }
 }
 
@@ -323,7 +289,7 @@ resource "azurerm_virtual_machine" "linux_vm" {
   ]
 }
 
-# Update Key Vault access policy to allow Linux VM's managed identity to read secrets
+# Update Key Vault access policy to allow Linux VM's managed identity to read secrets and keys
 resource "azurerm_key_vault_access_policy" "linux_vm_access" {
   key_vault_id = azurerm_key_vault.kv.id
   tenant_id    = data.azurerm_client_config.current.tenant_id
@@ -334,8 +300,109 @@ resource "azurerm_key_vault_access_policy" "linux_vm_access" {
     "List"
   ]
 
+  key_permissions = [
+    "Get",
+    "WrapKey",
+    "UnwrapKey"
+  ]
+
   depends_on = [azurerm_virtual_machine.linux_vm]
 }
+
+# Install Prerequisites Extension (Python, etc.)
+resource "azurerm_virtual_machine_extension" "prerequisites" {
+  name                 = "InstallPrerequisites"
+  virtual_machine_id   = azurerm_virtual_machine.linux_vm.id
+  publisher            = "Microsoft.Azure.Extensions"
+  type                 = "CustomScript"
+  type_handler_version = "2.1"
+
+  settings = jsonencode({
+    script = base64encode(<<-EOF
+#!/bin/bash
+set -e
+echo "Installing basic prerequisites and tools..."
+
+# Update package list
+apt-get update -y
+
+# Install essential tools and packages
+apt-get install -y curl wget unzip htop tree vim nano
+
+# Install Python 3 and related tools (default for Ubuntu 22.04)
+apt-get install -y python3 python3-pip python3-venv python3-dev
+
+# Create python3 symlink as python (in case some tools need it)
+if ! command -v python &> /dev/null; then
+    ln -sf /usr/bin/python3 /usr/bin/python
+fi
+
+# Upgrade pip
+pip3 install --upgrade pip
+
+# Ensure waagent is running properly
+systemctl enable walinuxagent || systemctl enable waagent || true
+systemctl start walinuxagent || systemctl start waagent || true
+systemctl restart walinuxagent || systemctl restart waagent || true
+
+# Install additional useful tools
+apt-get install -y git jq software-properties-common apt-transport-https ca-certificates gnupg
+
+echo "Prerequisites installation completed successfully!"
+echo "Python version: $(python3 --version)"
+echo "VM is ready for use!"
+EOF
+    )
+  })
+
+  depends_on = [
+    azurerm_virtual_machine.linux_vm,
+    azurerm_key_vault_access_policy.linux_vm_access
+  ]
+
+  tags = {
+    Environment = "Testing"
+    Purpose     = "Install Prerequisites"
+  }
+}
+
+# Azure Disk Encryption Extension for Linux VM (runs after prerequisites)
+# NOTE: Disabled due to Ubuntu 22.04 compatibility issues - Python 2.7 not available
+# Azure Disk Encryption requires Python 2.7 which is not available in Ubuntu 22.04
+# For encryption, consider using Azure Disk Encryption at Rest with Platform-Managed Keys (default)
+# or Customer-Managed Keys, or encrypt manually after VM deployment
+
+/*
+resource "azurerm_virtual_machine_extension" "ade_linux" {
+  name                 = "AzureDiskEncryption"
+  virtual_machine_id   = azurerm_virtual_machine.linux_vm.id
+  publisher            = "Microsoft.Azure.Security"
+  type                 = "AzureDiskEncryptionForLinux"
+  type_handler_version = "1.1"
+
+  settings = jsonencode({
+    KeyVaultURL = azurerm_key_vault.kv.vault_uri
+    KeyVaultResourceId = azurerm_key_vault.kv.id
+    KeyEncryptionKeyURL = azurerm_key_vault_key.ade_key.id
+    KekVaultResourceId = azurerm_key_vault.kv.id
+    KeyEncryptionAlgorithm = "RSA-OAEP"
+    VolumeType = "All"
+    EncryptFormatAll = false
+  })
+
+  depends_on = [
+    azurerm_virtual_machine_extension.prerequisites, # Wait for prerequisites first
+    azurerm_virtual_machine.linux_vm,
+    azurerm_key_vault_key.ade_key,
+    azurerm_key_vault_access_policy.linux_vm_access
+  ]
+
+  tags = {
+    Environment = "Testing"
+    Purpose     = "Azure Disk Encryption"
+  }
+}
+*/
 
 # Store Linux VM connection information in Key Vault
 resource "azurerm_key_vault_secret" "linux_vm_connection_info" {
