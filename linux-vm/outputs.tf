@@ -28,3 +28,13 @@ output "key_vault_name" {
   description = "Name of the Key Vault"
   value       = azurerm_key_vault.kv.name
 }
+
+output "linux_data_disk_01_id" {
+  description = "Resource ID of the additional 100GB data disk"
+  value       = azurerm_managed_disk.linux_data_disk_01.id
+}
+
+output "linux_data_disk_01_name" {
+  description = "Name of the additional 100GB data disk"
+  value       = azurerm_managed_disk.linux_data_disk_01.name
+}

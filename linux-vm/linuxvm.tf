@@ -140,6 +140,21 @@ resource "azurerm_managed_disk" "linux_os_disk" {
   }
 }
 
+# Create additional 100GB data disk
+resource "azurerm_managed_disk" "linux_data_disk_01" {
+  name                 = "disk-linux-data-01-${random_id.suffix.hex}"
+  location             = azurerm_resource_group.rg.location
+  resource_group_name  = azurerm_resource_group.rg.name
+  storage_account_type = var.linux_disk_storage_type
+  create_option        = "Empty"
+  disk_size_gb         = 100
+
+  tags = {
+    Environment = "Testing"
+    Purpose     = "Linux VM Data Disk 01"
+  }
+}
+
 # Public IP for Linux VM
 resource "azurerm_public_ip" "linux_vm_public_ip" {
   name                = "pip-linux-vm-${random_id.suffix.hex}"
@@ -203,6 +218,16 @@ resource "azurerm_virtual_machine" "linux_vm" {
     os_type           = "Linux"
   }
 
+  # Attach additional 100GB data disk
+  storage_data_disk {
+    name              = azurerm_managed_disk.linux_data_disk_01.name
+    caching           = "ReadWrite"
+    create_option     = "Attach"
+    managed_disk_id   = azurerm_managed_disk.linux_data_disk_01.id
+    disk_size_gb      = 100
+    lun               = 0
+  }
+
   # Note: No os_profile or os_profile_linux_config when using create_option = "Attach"
   # The OS configuration is already on the attached disk
 
@@ -219,6 +244,7 @@ resource "azurerm_virtual_machine" "linux_vm" {
 
   depends_on = [
     azurerm_managed_disk.linux_os_disk,
+    azurerm_managed_disk.linux_data_disk_01,
     azurerm_network_interface.linux_vm_nic,
     tls_private_key.linux_ssh_key
   ]
