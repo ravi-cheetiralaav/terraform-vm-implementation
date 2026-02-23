@@ -12,6 +12,13 @@ resource "azurerm_resource_group" "rg" {
 # Get current client configuration
 data "azurerm_client_config" "current" {}
 
+# User Assigned Managed Identity
+resource "azurerm_user_assigned_identity" "vm_identity" {
+  name                = "uami-vm-${random_id.suffix.hex}"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+}
+
 # Key Vault
 resource "azurerm_key_vault" "kv" {
   name                = "kv-linux-${random_id.suffix.hex}"
@@ -39,7 +46,7 @@ resource "azurerm_key_vault" "kv" {
   # Allow VM managed identity to read secrets
   access_policy {
     tenant_id = data.azurerm_client_config.current.tenant_id
-    object_id = module.virtual_machine.system_assigned_mi_principal_id
+    object_id = azurerm_user_assigned_identity.vm_identity.principal_id
 
     secret_permissions = [
       "Get",
@@ -247,7 +254,7 @@ module "virtual_machine" {
   }
 
   managed_identities = {
-    system_assigned = true
+    user_assigned_resource_ids = [azurerm_user_assigned_identity.vm_identity.id]
   }
 
   extensions = {
@@ -284,7 +291,7 @@ module "virtual_machine" {
 resource "azurerm_role_assignment" "vm_storage_access" {
   scope                = module.storage_account.resource_id
   role_definition_name = "Storage Blob Data Reader"
-  principal_id         = module.virtual_machine.system_assigned_mi_principal_id
+  principal_id         = azurerm_user_assigned_identity.vm_identity.principal_id
 }
 
 # Store VM admin password in Key Vault
