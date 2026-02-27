@@ -1,6 +1,12 @@
+# Time resource for unique naming
+resource "time_static" "example" {}
+
 # Random ID for unique resource names
 resource "random_id" "suffix" {
   byte_length = 4
+  keepers = {
+    timestamp = time_static.example.unix
+  }
 }
 
 # Get current client configuration
@@ -25,8 +31,17 @@ resource "azurerm_key_vault" "kv" {
   tenant_id           = data.azurerm_client_config.current.tenant_id
   sku_name            = "standard"
   purge_protection_enabled = true
-  enable_rbac_authorization = true
+  rbac_authorization_enabled = true
   enabled_for_disk_encryption = true
+  enabled_for_deployment = true
+  enabled_for_template_deployment = true
+  soft_delete_retention_days = 90
+  public_network_access_enabled = true
+
+  network_acls {
+    default_action = "Allow"
+    bypass         = "AzureServices"
+  }
 
   tags = {
     Environment = "Testing"
@@ -58,7 +73,7 @@ resource "azurerm_key_vault_key" "ade_key" {
   name         = "ade-encryption-key-${random_id.suffix.hex}"
   key_vault_id = azurerm_key_vault.kv.id
   key_type     = "RSA"
-  key_size     = 2048
+  key_size     = 4096
 
   key_opts = [
     "decrypt",
@@ -223,7 +238,7 @@ resource "azurerm_virtual_machine_data_disk_attachment" "data_disk_attachment" {
 # RBAC Role Assignment: Key Vault Crypto Officer for VM (required for ADE)
 resource "azurerm_role_assignment" "vm_keyvault_crypto_officer" {
   scope                = azurerm_key_vault.kv.id
-  role_definition_name = "Key Vault Administrator"
+  role_definition_name = "Key Vault Crypto Officer"
   principal_id         = azurerm_windows_virtual_machine.windows_vm.identity[0].principal_id
 
   depends_on = [azurerm_windows_virtual_machine.windows_vm]
@@ -240,6 +255,19 @@ resource "azurerm_role_assignment" "user_keyvault_admin" {
 
 
 
+# Generate a random UUID for SequenceVersion (required for ADE idempotency)
+resource "random_uuid" "sequence_version" {
+}
+
+# Time delay to ensure role assignments propagate before ADE extension
+resource "time_sleep" "wait_for_rbac" {
+  depends_on = [
+    azurerm_role_assignment.vm_keyvault_crypto_officer,
+    azurerm_role_assignment.user_keyvault_admin
+  ]
+  create_duration = "180s"
+}
+
 # Azure Disk Encryption Extension for Windows
 resource "azurerm_virtual_machine_extension" "ade_windows" {
   name                 = "AzureDiskEncryption"
@@ -247,6 +275,8 @@ resource "azurerm_virtual_machine_extension" "ade_windows" {
   publisher            = "Microsoft.Azure.Security"
   type                 = "AzureDiskEncryption"
   type_handler_version = "2.2"
+  auto_upgrade_minor_version = true
+  automatic_upgrade_enabled = false
 
   settings = jsonencode({
     EncryptionOperation    = "EnableEncryption"
@@ -256,14 +286,15 @@ resource "azurerm_virtual_machine_extension" "ade_windows" {
     KekVaultResourceId     = azurerm_key_vault.kv.id
     KeyEncryptionAlgorithm = "RSA-OAEP"
     VolumeType             = "All"
-    ResizeOSDisk           = false
+    SequenceVersion        = random_uuid.sequence_version.result
   })
 
   depends_on = [
     azurerm_windows_virtual_machine.windows_vm,
     azurerm_key_vault_key.ade_key,
     azurerm_role_assignment.vm_keyvault_crypto_officer,
-    azurerm_virtual_machine_data_disk_attachment.data_disk_attachment
+    azurerm_virtual_machine_data_disk_attachment.data_disk_attachment,
+    time_sleep.wait_for_rbac
   ]
 
   tags = {
