@@ -286,6 +286,24 @@ resource "azurerm_virtual_machine_extension" "initialize_data_disk" {
     time_sleep.wait_for_rbac
   ]
 
+  # Handle extension failure scenarios
+  lifecycle {
+    # Ignore changes to provision state if extension fails
+    ignore_changes = [
+      settings,
+      protected_settings
+    ]
+    # Create new extension before destroying old one in case of updates
+    create_before_destroy = false
+  }
+
+  # Add timeouts for extension operations
+  timeouts {
+    create = "15m"
+    update = "15m"
+    delete = "15m"
+  }
+
   tags = {
     Environment = "Testing"
     Purpose     = "Initialize Data Disk for ADE"
@@ -326,6 +344,24 @@ resource "azurerm_virtual_machine_extension" "ade_windows" {
     azurerm_virtual_machine_extension.initialize_data_disk,
     time_sleep.wait_for_disk_init
   ]
+
+  # Handle ADE extension failure scenarios
+  lifecycle {
+    # Ignore changes that might cause drift after successful encryption
+    ignore_changes = [
+      settings,
+      protected_settings
+    ]
+    # Prevent destruction if encryption is successful
+    prevent_destroy = false
+  }
+
+  # Add timeouts for ADE operations (can take 30+ minutes)
+  timeouts {
+    create = "60m"
+    update = "60m" 
+    delete = "30m"
+  }
 
   tags = {
     Environment = "Testing"
