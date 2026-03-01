@@ -268,6 +268,36 @@ resource "time_sleep" "wait_for_rbac" {
   create_duration = "180s"
 }
 
+# PowerShell extension to initialize data disk
+resource "azurerm_virtual_machine_extension" "initialize_data_disk" {
+  name                 = "InitializeDataDisk"
+  virtual_machine_id   = azurerm_windows_virtual_machine.windows_vm.id
+  publisher            = "Microsoft.Compute"
+  type                 = "CustomScriptExtension"
+  type_handler_version = "1.10"
+  auto_upgrade_minor_version = true
+
+  settings = jsonencode({
+    commandToExecute = "powershell -ExecutionPolicy Unrestricted -Command \"Get-Disk | Where-Object PartitionStyle -Eq 'RAW' | Initialize-Disk -PartitionStyle MBR -PassThru | New-Partition -AssignDriveLetter -UseMaximumSize | Format-Volume -FileSystem NTFS -NewFileSystemLabel 'DataDisk' -Confirm:$false; Start-Sleep -Seconds 30\""
+  })
+
+  depends_on = [
+    azurerm_virtual_machine_data_disk_attachment.data_disk_attachment,
+    time_sleep.wait_for_rbac
+  ]
+
+  tags = {
+    Environment = "Testing"
+    Purpose     = "Initialize Data Disk for ADE"
+  }
+}
+
+# Additional wait time after disk initialization
+resource "time_sleep" "wait_for_disk_init" {
+  depends_on = [azurerm_virtual_machine_extension.initialize_data_disk]
+  create_duration = "60s"
+}
+
 # Azure Disk Encryption Extension for Windows
 resource "azurerm_virtual_machine_extension" "ade_windows" {
   name                 = "AzureDiskEncryption"
@@ -293,8 +323,8 @@ resource "azurerm_virtual_machine_extension" "ade_windows" {
     azurerm_windows_virtual_machine.windows_vm,
     azurerm_key_vault_key.ade_key,
     azurerm_role_assignment.vm_keyvault_crypto_officer,
-    azurerm_virtual_machine_data_disk_attachment.data_disk_attachment,
-    time_sleep.wait_for_rbac
+    azurerm_virtual_machine_extension.initialize_data_disk,
+    time_sleep.wait_for_disk_init
   ]
 
   tags = {
