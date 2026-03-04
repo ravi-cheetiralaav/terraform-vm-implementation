@@ -176,6 +176,18 @@ resource "azurerm_network_interface_security_group_association" "nsg_association
   network_security_group_id = azurerm_network_security_group.nsg.id
 }
 
+# User Assigned Managed Identity for Windows VM
+resource "azurerm_user_assigned_identity" "windows_vm_identity" {
+  name                = "id-winvm-${random_id.suffix.hex}"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+
+  tags = {
+    Environment = "Testing"
+    Purpose     = "Windows VM User Assigned Identity"
+  }
+}
+
 # Additional data disk for Windows VM
 resource "azurerm_managed_disk" "windows_data_disk" {
   name                 = "disk-winvm-data-${random_id.suffix.hex}"
@@ -218,7 +230,8 @@ resource "azurerm_windows_virtual_machine" "windows_vm" {
   }
 
   identity {
-    type = "SystemAssigned"
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.windows_vm_identity.id]
   }
 
   tags = {
@@ -239,9 +252,9 @@ resource "azurerm_virtual_machine_data_disk_attachment" "data_disk_attachment" {
 resource "azurerm_role_assignment" "vm_keyvault_crypto_officer" {
   scope                = azurerm_key_vault.kv.id
   role_definition_name = "Key Vault Crypto Officer"
-  principal_id         = azurerm_windows_virtual_machine.windows_vm.identity[0].principal_id
+  principal_id         = azurerm_user_assigned_identity.windows_vm_identity.principal_id
 
-  depends_on = [azurerm_windows_virtual_machine.windows_vm]
+  depends_on = [azurerm_user_assigned_identity.windows_vm_identity]
 }
 
 # RBAC Role Assignment: Key Vault Administrator for deployment user
