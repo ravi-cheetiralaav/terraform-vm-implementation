@@ -70,7 +70,7 @@ resource "azurerm_key_vault_secret" "windows_admin_password" {
 
 # Key Vault Key for Azure Disk Encryption (ADE)
 resource "azurerm_key_vault_key" "ade_key" {
-  name         = "ade-encryption-key-${random_id.suffix.hex}"
+  name         = "ade-encryption-key2-${random_id.suffix.hex}"
   key_vault_id = azurerm_key_vault.kv.id
   key_type     = "RSA"
   key_size     = 4096
