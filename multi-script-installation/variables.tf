@@ -70,11 +70,25 @@ variable "param1" {
 variable "param2" {
   description = "Parameter passed to script2.ps1 (-Param2)"
   type        = string
+  default     = ""
 }
 
 variable "param3" {
   description = "Parameter passed to script3.ps1 (-Param3)"
   type        = string
+  default     = ""
+}
+
+variable "run_script2" {
+  description = "Whether to download and execute script2.ps1"
+  type        = bool
+  default     = true
+}
+
+variable "run_script3" {
+  description = "Whether to download and execute script3.ps1"
+  type        = bool
+  default     = true
 }
 
 variable "tags" {

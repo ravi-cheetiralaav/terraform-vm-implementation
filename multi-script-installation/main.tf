@@ -1,3 +1,6 @@
+# Current Azure AD principal running Terraform
+data "azurerm_client_config" "current" {}
+
 # Random ID for unique resource names
 resource "random_id" "suffix" {
   byte_length = 4
@@ -42,6 +45,7 @@ resource "azurerm_storage_blob" "script1" {
   storage_container_name = azurerm_storage_container.scripts.name
   type                   = "Block"
   source                 = "${path.module}/scripts/script1.ps1"
+  depends_on             = [azurerm_role_assignment.terraform_blob_contributor]
 }
 
 # Upload script2.ps1
@@ -51,6 +55,7 @@ resource "azurerm_storage_blob" "script2" {
   storage_container_name = azurerm_storage_container.scripts.name
   type                   = "Block"
   source                 = "${path.module}/scripts/script2.ps1"
+  depends_on             = [azurerm_role_assignment.terraform_blob_contributor]
 }
 
 # Upload script3.ps1
@@ -60,6 +65,7 @@ resource "azurerm_storage_blob" "script3" {
   storage_container_name = azurerm_storage_container.scripts.name
   type                   = "Block"
   source                 = "${path.module}/scripts/script3.ps1"
+  depends_on             = [azurerm_role_assignment.terraform_blob_contributor]
 }
 
 # -------------------------------------------------------
@@ -79,6 +85,13 @@ resource "azurerm_role_assignment" "scripts_blob_reader" {
   scope                = azurerm_storage_account.scripts.id
   role_definition_name = "Storage Blob Data Reader"
   principal_id         = azurerm_user_assigned_identity.scripts_identity.principal_id
+}
+
+# Grant the Terraform runner write access so it can upload blobs (required when storage_use_azuread = true)
+resource "azurerm_role_assignment" "terraform_blob_contributor" {
+  scope                = azurerm_storage_account.scripts.id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = data.azurerm_client_config.current.object_id
 }
 
 # -------------------------------------------------------
@@ -220,11 +233,11 @@ resource "azurerm_virtual_machine_extension" "multi_script" {
   auto_upgrade_minor_version = true
 
   settings = jsonencode({
-    fileUris = [
+    fileUris = compact([
       "${local.script_base_url}/${azurerm_storage_blob.script1.name}",
-      "${local.script_base_url}/${azurerm_storage_blob.script2.name}",
-      "${local.script_base_url}/${azurerm_storage_blob.script3.name}",
-    ]
+      var.run_script2 ? "${local.script_base_url}/${azurerm_storage_blob.script2.name}" : "",
+      var.run_script3 ? "${local.script_base_url}/${azurerm_storage_blob.script3.name}" : "",
+    ])
   })
 
   # managedIdentity MUST be in protected_settings for the extension agent to use
@@ -234,11 +247,11 @@ resource "azurerm_virtual_machine_extension" "multi_script" {
     managedIdentity = {
       clientId = azurerm_user_assigned_identity.scripts_identity.client_id
     }
-    commandToExecute = join(" && ", [
+    commandToExecute = join(" && ", compact([
       "powershell.exe -ExecutionPolicy Bypass -File ${azurerm_storage_blob.script1.name} -Param1 '${var.param1}'",
-      "powershell.exe -ExecutionPolicy Bypass -File ${azurerm_storage_blob.script2.name} -Param2 '${var.param2}'",
-      "powershell.exe -ExecutionPolicy Bypass -File ${azurerm_storage_blob.script3.name} -Param3 '${var.param3}'",
-    ])
+      var.run_script2 ? "powershell.exe -ExecutionPolicy Bypass -File ${azurerm_storage_blob.script2.name} -Param2 '${var.param2}'" : "",
+      var.run_script3 ? "powershell.exe -ExecutionPolicy Bypass -File ${azurerm_storage_blob.script3.name} -Param3 '${var.param3}'" : "",
+    ]))
   })
 
   depends_on = [

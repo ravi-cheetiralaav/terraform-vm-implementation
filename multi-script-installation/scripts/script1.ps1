@@ -4,7 +4,13 @@
 
 param(
     [Parameter(Mandatory = $true)]
-    [string]$Param1
+    [string]$Param1,
+
+    [Parameter(Mandatory = $true)]
+    [string]$Param2,
+
+    [Parameter(Mandatory = $true)]
+    [string]$Param3
 )
 
 $logFile = "C:\Logs\script1.log"
@@ -18,6 +24,8 @@ function Write-Log {
 
 Write-Log "Starting script1.ps1"
 Write-Log "Received Param1 = '$Param1'"
+Write-Log "Received Param2 = '$Param2'"
+Write-Log "Received Param3 = '$Param3'"
 
 function Set-RegistryDword {
     param(
