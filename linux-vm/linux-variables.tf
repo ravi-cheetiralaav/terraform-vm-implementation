@@ -68,3 +68,35 @@ variable "admin_password" {
   sensitive   = true
   default     = "NotUsedForLinuxVM123!"
 }
+
+# Optional: run a shell script from Azure Blob Storage on the Linux VM
+variable "enable_linux_blob_script" {
+  description = "Enable running a shell script from Azure Blob Storage using Custom Script Extension"
+  type        = bool
+  default     = false
+}
+
+variable "linux_script_storage_account_name" {
+  description = "Storage account name containing the Linux shell script blob"
+  type        = string
+  default     = "azrnfnfpgg"
+}
+
+variable "linux_script_container_name" {
+  description = "Blob container name containing the Linux shell script"
+  type        = string
+  default     = "scripts"
+}
+
+variable "linux_script_blob_name" {
+  description = "Blob name for the Linux shell script"
+  type        = string
+  default     = "sw-test"
+}
+
+variable "linux_script_storage_account_key" {
+  description = "Storage account access key for private blob download"
+  type        = string
+  sensitive   = true
+  default     = ""
+}

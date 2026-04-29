@@ -366,6 +366,38 @@ EOF
   }
 }
 
+# Run a shell script from Azure Blob Storage using Custom Script Extension
+resource "azurerm_virtual_machine_extension" "run_blob_shell_script" {
+  count                = var.enable_linux_blob_script ? 1 : 0
+  name                 = "RunBlobShellScript"
+  virtual_machine_id   = azurerm_virtual_machine.linux_vm.id
+  publisher            = "Microsoft.Azure.Extensions"
+  type                 = "CustomScript"
+  type_handler_version = "2.1"
+
+  settings = jsonencode({
+    fileUris = [
+      "https://${var.linux_script_storage_account_name}.blob.core.windows.net/${var.linux_script_container_name}/${var.linux_script_blob_name}"
+    ]
+  })
+
+  protected_settings = jsonencode({
+    commandToExecute  = "chmod +x ${var.linux_script_blob_name} && ./${var.linux_script_blob_name}"
+    storageAccountName = var.linux_script_storage_account_name
+    storageAccountKey  = var.linux_script_storage_account_key
+  })
+
+  depends_on = [
+    azurerm_virtual_machine_extension.prerequisites,
+    azurerm_virtual_machine.linux_vm
+  ]
+
+  tags = {
+    Environment = "Testing"
+    Purpose     = "Run Blob Shell Script"
+  }
+}
+
 # Azure Disk Encryption Extension for Linux VM (runs after prerequisites)
 # NOTE: Disabled due to Ubuntu 22.04 compatibility issues - Python 2.7 not available
 # Azure Disk Encryption requires Python 2.7 which is not available in Ubuntu 22.04
