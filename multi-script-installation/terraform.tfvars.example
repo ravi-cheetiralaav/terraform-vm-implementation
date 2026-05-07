@@ -1,0 +1,24 @@
+resource_group_name = "rg-multi-script-demo"
+location            = "Australia East"
+
+vm_size        = "Standard_B2s"
+admin_username = "azureadmin"
+admin_password = "YourSecureP@ssword123!"  # Change before use
+
+image_publisher = "MicrosoftWindowsServer"
+image_offer     = "WindowsServer"
+image_sku       = "2022-Datacenter"
+image_version   = "latest"
+
+disk_storage_type = "Standard_LRS"
+
+# Script parameters — each is passed to its respective script
+param1 = "ValueForScript1"
+param2 = "ValueForScript2"
+param3 = "ValueForScript3"
+
+tags = {
+  Environment = "Demo"
+  Project     = "MultiScriptInstallation"
+  Owner       = "YourName"
+}

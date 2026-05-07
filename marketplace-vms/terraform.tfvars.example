@@ -1,0 +1,37 @@
+# Example Terraform variables file
+# Copy this file to terraform.tfvars and customize the values
+
+# Core Infrastructure
+resource_group_name = "rg-marketplace-vms-demo"
+location           = "Australia East"
+
+# VM Configuration
+admin_username      = "azureuser"
+vm_size            = "Standard_B2s"
+disk_storage_type  = "Premium_LRS"
+
+# Marketplace Image (Ubuntu 22.04 LTS)
+image_publisher = "Canonical"
+image_offer     = "0001-com-ubuntu-server-jammy" 
+image_sku       = "22_04-lts-gen2"
+image_version   = "latest"
+
+# Alternative images you can use:
+# 
+# Ubuntu 20.04 LTS:
+# image_publisher = "Canonical"
+# image_offer     = "0001-com-ubuntu-server-focal"
+# image_sku       = "20_04-lts-gen2"
+# image_version   = "latest"
+#
+# CentOS 7:
+# image_publisher = "OpenLogic"
+# image_offer     = "CentOS"
+# image_sku       = "7_9-gen2"
+# image_version   = "latest"
+#
+# Red Hat Enterprise Linux 8:
+# image_publisher = "RedHat"
+# image_offer     = "RHEL"
+# image_sku       = "8-lvm-gen2"
+# image_version   = "latest"

@@ -1,0 +1,30 @@
+# Example Terraform variables file
+# Copy this file to terraform.tfvars and update the values
+
+# Required Variables
+server       = "web-server-01"
+admin_password = "P@ssw0rd123!" # Change this to a secure password
+
+# Optional Variables - Override defaults if needed
+resource_group_name = "rg-install-demo-example"
+location           = "Australia East"
+
+# Custom tags (optional - will merge with defaults)
+tags = {
+  Environment = "Development"
+  Project     = "InstallDemo"
+  Owner       = "DevOps Team"
+  CostCenter  = "IT-001"
+  Application = "Demo Application"
+}
+
+# VM Configuration (optional - override defaults)
+# vm_size            = "Standard_B2s"
+# disk_storage_type  = "Premium_LRS"
+# admin_username     = "azureuser"
+
+# Marketplace Image Configuration (optional - override defaults)
+# image_publisher = "MicrosoftWindowsServer"
+# image_offer     = "WindowsServer"
+# image_sku       = "2022-datacenter-g2"
+# image_version   = "latest"

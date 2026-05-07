@@ -1,0 +1,7 @@
+# Example Terraform Variables File
+# Copy this file to terraform.tfvars and update with your values
+
+resource_group_name = "rg-windows-vm-demo"
+location            = "Australia East"
+admin_username      = "azureadmin"
+admin_password      = "YourSecurePassword123!"  # Change this to a secure password
